@@ -1,0 +1,3 @@
+[submodule "Seam"]
+	path = Seam
+	url = https://github.com/Andra3B/SeamBuildSystem.git
