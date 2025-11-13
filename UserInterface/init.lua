@@ -1,0 +1,152 @@
+local UserInterface = {}
+
+UserInterface.Initialised = false
+
+UserInterface.Frame = require("UserInterface.Frame")
+UserInterface.Label = require("UserInterface.Label")
+UserInterface.Button = require("UserInterface.Button")
+UserInterface.TextBox = require("UserInterface.TextBox")
+UserInterface.VideoFrame = require("UserInterface.VideoFrame")
+
+UserInterface.Shaders = {}
+
+UserInterface.Events = nil
+
+UserInterface.Root = nil
+
+UserInterface.PreFocus = nil
+UserInterface.Focus = nil
+
+function UserInterface.Initialise()
+	if not UserInterface.Initialised then
+		UserInterface.Shaders.YUV2RGBA = love.graphics.newShader(
+			"Assets/Shaders/YUV2RGBA.frag",
+			"Assets/Shaders/Default.vert"
+		)
+
+		UserInterface.Events = EventDirector.Create()
+
+		UserInterface.Initialised = true
+	end
+end
+
+function UserInterface.Update(deltaTime)
+	UserInterface.Events:Update()
+
+	if UserInterface.Root then
+		UserInterface.Root:RecursiveUpdate(deltaTime)
+	end
+end
+
+function UserInterface.Refresh()
+	if UserInterface.Root then
+		UserInterface.Root:RecursiveRefresh()
+	end
+end
+
+function UserInterface.Input(inputType, scancode, state)
+	if inputType == Enum.InputType.Mouse then
+		local interactiveFrame = UserInterface.GetFrameContainingPoint(state.X, state.Y, UserInterface.Root, "Interactive")
+
+		if scancode == "mousemovement" then
+			if interactiveFrame ~= UserInterface.PreFocus then
+				UserInterface.Events:Push("PreFocusChanged", interactiveFrame)
+
+				if UserInterface.PreFocus then
+					UserInterface.PreFocus:SetHovering(false)
+				end
+
+				UserInterface.PreFocus = interactiveFrame
+
+				if interactiveFrame then
+					interactiveFrame:SetHovering(true)
+				end
+			end
+		elseif scancode == "leftmousebutton" and state.Z < 0 then
+			if interactiveFrame ~= UserInterface.Focus then
+				UserInterface.Events:Push("FocusChanged", interactiveFrame)
+
+				if UserInterface.Focus then
+					UserInterface.Focus:SetFocused(false)
+				end
+
+				UserInterface.Focus = interactiveFrame
+
+				if interactiveFrame then
+					interactiveFrame:SetFocused(true)
+				end
+			end
+		end
+	end
+
+	if UserInterface.Focus then
+		UserInterface.Focus:Input(inputType, scancode, state)
+	end
+end
+
+function UserInterface.TextInput(text)
+	if UserInterface.Focus and UserInterface.Focus.TextInput then
+		UserInterface.Focus:TextInput(text)
+	end
+end
+
+function UserInterface.GetFrameContainingPoint(x, y, frame, frameType)
+	local containingFrame = nil
+
+	if frame then
+		local absoluteX, absoluteY = frame._AbsolutePosition:Unpack()
+		local absoluteWidth, absoluteHeight = frame._AbsoluteSize:Unpack()
+
+		if x >= absoluteX and y >= absoluteY and x <= (absoluteX + absoluteWidth) and y <= (absoluteY + absoluteHeight) then
+			if not frameType or Class.IsA(childContainingFrame, frameType) then
+				containingFrame = frame
+			end
+
+			for childIndex = #frame._Children, 1, -1 do
+				local childContainingFrame = UserInterface.GetFrameContainingPoint(x, y, frame._Children[childIndex])
+
+				if childContainingFrame then
+					containingFrame = childContainingFrame
+
+					break
+				end
+			end
+		end
+	end
+
+	return containingFrame
+end
+
+function UserInterface.SetRoot(root)
+	if Class.IsA(root, "Frame") then
+		UserInterface.Root = root
+
+		return true
+	end
+
+	return false
+end
+
+function UserInterface.Draw()
+	if UserInterface.Root then
+		love.graphics.push("all")
+
+		UserInterface.Root:RecursiveDraw()
+		
+		love.graphics.pop()
+	end
+end
+
+function UserInterface.Deinitialise()
+	if UserInterface.Initialised then
+		UserInterface.Shaders.YUV2RGBA:release()
+		UserInterface.Shaders.YUV2RGBA = nil
+
+		UserInterface.Events:Destroy()
+		UserInterface.Events = nil
+
+		UserInterface.Initialised = false
+	end
+end
+
+return UserInterface

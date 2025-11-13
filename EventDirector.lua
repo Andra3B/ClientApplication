@@ -1,0 +1,84 @@
+local EventListener = require("EventListener")
+
+local EventDirector = {}
+
+function EventDirector.Create()
+	local self = Class.CreateInstance(nil, EventDirector)
+
+	self._Queue = {}
+    self._Listeners = {}
+
+	self._Destroyed = false
+
+	return self
+end
+
+function EventDirector:Push(event, ...)
+    table.insert(self._Queue, 1, {event, ...})
+end
+
+function EventDirector:Listen(event, callback, userData, userDataCleanup)
+    local eventListeners = self._Listeners[event]
+
+    if not eventListeners then
+        eventListeners = {}
+        self._Listeners[event] = eventListeners
+    end
+
+    local eventListener = EventListener.Create(callback, userData, userDataCleanup)
+    table.insert(eventListeners, eventListener)
+
+    return eventListener
+end
+
+function EventDirector:ClearQueue()
+    table.erase(self._Queue)
+end
+
+function EventDirector:Update()
+    while #self._Queue > 0 do
+        self:Trigger(unpack(table.remove(self._Queue)))
+    end
+end
+
+function EventDirector:Trigger(event, ...)
+    local eventListeners = self._Listeners[event]
+
+    if eventListeners then
+        for index, eventListener in pairs(eventListeners) do
+            if eventListener._Destroyed or eventListener:Trigger(...) then
+                eventListeners[index] = nil
+            end
+        end
+    end
+end
+
+function EventDirector:ClearListeners()
+    for eventIndex, eventListeners in pairs(self._Listeners) do
+        for listenerIndex, eventListener in pairs(eventListeners) do
+            eventListener:Destroy()
+
+            eventListeners[listenerIndex] = nil
+        end
+
+        self._Listeners[eventIndex] = nil
+    end
+end
+
+function EventDirector:IsDestroyed()
+	return self._Destroyed
+end
+
+function EventDirector:Destroy()
+	if not self._Destroyed then
+		self:ClearQueue()
+		self._Queue = nil
+
+		self:ClearListeners()
+		self._Listeners = nil
+
+		self._Destroyed = true
+	end
+end
+
+return Class.CreateClass(EventDirector, "EventDirector")

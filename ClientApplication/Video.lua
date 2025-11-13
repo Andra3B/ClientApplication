@@ -1,0 +1,339 @@
+local Video = {}
+
+local function GetAVErrorString(errorCode)
+	local errorDescriptionHandle = ffi.new("char[256]")
+	ffmpeg.avutil.av_strerror(errorCode, errorDescriptionHandle, 256)
+
+	return ffi.string(errorDescriptionHandle)
+end
+
+function Video.CreateFromHandle(sourceHandle)
+	if ffmpeg.avformat.avformat_find_stream_info(sourceHandle, nil) >= 0 then
+		local codecHandleHandle = ffi.new("const AVCodec*[1]")
+		
+		local streamIndex = ffmpeg.avformat.av_find_best_stream(
+			sourceHandle, ffmpeg.avutil.AVMEDIA_TYPE_VIDEO, -1, -1, codecHandleHandle, 0
+		)
+
+		if streamIndex >= 0 then
+			local videoStreamHandle = sourceHandle.streams[streamIndex]
+			local codecParametersHandle = videoStreamHandle.codecpar
+				
+			local codecContextHandle = ffmpeg.avcodec.avcodec_alloc_context3(codecHandleHandle[0])
+			ffmpeg.avcodec.avcodec_parameters_to_context(codecContextHandle, codecParametersHandle)
+
+			if ffmpeg.avcodec.avcodec_open2(codecContextHandle, codecHandleHandle[0], nil) == 0 then
+				local parserContextHandle = ffmpeg.avcodec.av_parser_init(codecContextHandle.codec_id)
+
+				if parserContextHandle ~= nil then
+					local self = Class.CreateInstance(nil, Video)
+
+					self._SourceHandle = sourceHandle
+					self._VideoStreamHandle = videoStreamHandle
+					self._EndOfStream = false
+
+					self._CodecContextHandle = codecContextHandle
+					self._ParserContextHandle = parserContextHandle
+
+					self._Width = codecParametersHandle.width
+					self._Height = codecParametersHandle.height
+					self._TimeBase = videoStreamHandle.time_base.num / videoStreamHandle.time_base.den
+					self._Duration =  tonumber(sourceHandle.duration / ffmpeg.avutil.AV_TIME_BASE)
+
+					self._FrameHandle = ffmpeg.avutil.av_frame_alloc()
+					
+					self._YImageData = love.image.newImageData(self._Width, self._Height, "r8")
+					self._YImage = love.graphics.newImage(self._YImageData)
+					
+					self._UVImageData = love.image.newImageData(self._Width * 0.5, self._Height, "r8")
+					self._UVImage = love.graphics.newImage(self._UVImageData)
+					
+					self._RGBAImage = love.graphics.newCanvas(self._Width, self._Height)
+
+					self._RefreshedRGBAImage = false
+					self._RefreshedYUVImage = false
+
+					self._Time = 0
+
+					return self
+				else
+					Log.Error(Enum.LogCategory.Video, "Unable to initialise packet parser context!")
+				end
+			else
+				Log.Error(Enum.LogCategory.Video, "Unable to setup codec context!")
+			end
+
+			ffmpeg.avcodec.avcodec_free_context(ffi.new("AVCodecContext*[1]", codecContextHandle))
+		elseif streamIndex == ffmpeg.avutil.AVERROR_STREAM_NOT_FOUND then
+			Log.Error(Enum.LogCategory.Video, "Source doesnt contain a valid video stream!")
+		else
+			Log.Error(Enum.LogCategory.Video, "No supported decoder for video stream!")
+		end
+	else
+		Log.Error(Enum.LogCategory.Video, "Unable to determine stream information!")
+	end
+end
+
+function Video.CreateFromFile(videoPath)
+	local sourceHandleHandle = ffi.new("AVFormatContext*[1]")
+
+	if ffmpeg.avformat.avformat_open_input(sourceHandleHandle, videoPath, nil, nil) == 0 then
+		return Video.CreateFromHandle(sourceHandleHandle[0])
+	else
+		Log.Error(Enum.LogCategory.Video, "Failed to open file %s", videoPath)
+	end
+end
+
+function Video:IsEndOfStream()
+	return self._EndOfStream
+end
+
+function Video:GetYUVImages()
+	return self._YImage, self._UVImage, self._YImageData, self._UVImageData
+end
+
+function Video:GetRGBAImage()
+	return self._RGBAImage
+end
+
+function Video:GetTime()
+	return self._Time
+end
+
+function Video:SetTime(time)
+	time = math.clamp(time, 0, self._Duration)
+
+	if ffmpeg.avformat.av_seek_frame(
+		self._SourceHandle,
+		self._VideoStreamHandle.index,
+		time / self._TimeBase,
+		0
+	) >= 0 or ffmpeg.avformat.av_seek_frame(
+		self._SourceHandle,
+		self._VideoStreamHandle.index,
+		time / self._TimeBase,
+		ffmpeg.avutil.AVSEEK_FLAG_BACKWARD
+	) >= 0 then
+		ffmpeg.avcodec.avcodec_flush_buffers(self._CodecContextHandle)
+
+		self._EndOfStream = false
+		self._Time = time
+		return true
+	else
+		Log.Error(Enum.LogCategory.Video, "Failed to set video time!")
+	end
+
+	return false
+end
+
+function Video:RefreshRGBAImage()
+	if not self._RefreshedRGBAImage then
+		love.graphics.push("all")
+
+		love.graphics.setCanvas(self._RGBAImage)
+
+		love.graphics.setShader(UserInterface.Shaders.YUV2RGBA)
+		UserInterface.Shaders.YUV2RGBA:send("uvImage", self._UVImage)
+
+		love.graphics.draw(self._YImage)
+
+		love.graphics.pop()
+
+		self._RefreshedRGBAImage = true
+	end
+end
+
+function Video:RefreshYUVImages()
+	if not self._RefreshedYUVImage then
+		local frame = self._FrameHandle
+
+		local width = frame.width
+		local height = frame.height
+
+		local yDataByteCount = width * height
+
+		local halfWidth = frame.width * 0.5
+		local halfHeight = frame.height * 0.5
+
+		local uvDataByteCount = halfWidth * halfHeight
+
+		local yImageDataHandle = ffi.cast("uint8_t*", self._YImageData:getFFIPointer())
+		local uvImageDataHandle = ffi.cast("uint8_t*", self._UVImageData:getFFIPointer())
+
+		if frame.linesize[0] == width then
+			ffi.copy(yImageDataHandle, frame.data[0], yDataByteCount)
+		else
+			for y = 0, height - 1, 1 do
+				ffi.copy(
+					yImageDataHandle + y * width,
+					frame.data[0] + y * frame.linesize[0],
+					width
+				)
+			end
+		end
+
+		if frame.linesize[1] == halfWidth then
+			ffi.copy(uvImageDataHandle, frame.data[1], uvDataByteCount)
+		else
+			for y = 0, halfHeight - 1, 1 do
+				ffi.copy(
+					uvImageDataHandle + y * halfWidth,
+					frame.data[1] + y * frame.linesize[1],
+					halfWidth
+				)
+			end
+		end
+
+		if frame.linesize[2] == halfWidth then
+			ffi.copy(uvImageDataHandle + uvDataByteCount, frame.data[2], uvDataByteCount)
+		else
+			local vImageDataHandle = uvImageDataHandle + uvDataByteCount
+			for y = 0, halfHeight - 1, 1 do
+				ffi.copy(
+					vImageDataHandle + y * halfWidth,
+					frame.data[2] + y * frame.linesize[2],
+					halfWidth
+				)
+			end
+		end
+
+		self._YImage:replacePixels(self._YImageData)
+		self._UVImage:replacePixels(self._UVImageData)
+
+		self._RefreshedYUVImage = true
+	end
+end
+
+function Video:RefreshFrame()
+	if not self._FrameRefreshed then
+		self:RefreshYUVImages()
+		self:RefreshRGBAImage()
+	
+		self._FrameRefreshed = true
+	end
+
+	return self._RGBAImage
+end
+
+function Video:GetNextFrame()
+	local unparsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
+	local parsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
+
+	local gotFrame = false
+
+	while not (gotFrame or self._EndOfStream) do
+		ffmpeg.avcodec.av_packet_unref(unparsedPacketHandle)
+		local status = ffmpeg.avformat.av_read_frame(self._SourceHandle, unparsedPacketHandle)
+
+		if unparsedPacketHandle.stream_index == self._VideoStreamHandle.index then
+			if status == 0 then
+				local parsedPacketDataHandle = ffi.new("uint8_t*[1]")
+				local parsedPacketDataSizeHandle = ffi.new("int[1]")
+
+				while parsedPacketDataSizeHandle[0] == 0 do
+					local bytesConsumed = ffmpeg.avcodec.av_parser_parse2(
+						self._ParserContextHandle, self._CodecContextHandle,
+						parsedPacketDataHandle, parsedPacketDataSizeHandle,
+						unparsedPacketHandle.data, unparsedPacketHandle.size,
+						unparsedPacketHandle.pts, unparsedPacketHandle.dts, unparsedPacketHandle.pos
+					)
+
+					unparsedPacketHandle.data = unparsedPacketHandle.data + bytesConsumed
+					unparsedPacketHandle.size = unparsedPacketHandle.size - bytesConsumed
+				end
+
+				ffmpeg.avcodec.av_new_packet(parsedPacketHandle, parsedPacketDataSizeHandle[0])
+				ffi.copy(parsedPacketHandle.data, parsedPacketDataHandle[0], parsedPacketDataSizeHandle[0])
+				parsedPacketHandle.pts = unparsedPacketHandle.pts
+				parsedPacketHandle.dts = unparsedPacketHandle.dts
+				parsedPacketHandle.pos = unparsedPacketHandle.pos
+				parsedPacketHandle.stream_index = unparsedPacketHandle.stream_index
+
+				status = ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, parsedPacketHandle)
+				ffmpeg.avcodec.av_packet_unref(parsedPacketHandle)
+
+				if status == 0 then
+					status = ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
+
+					if status == 0 then
+						gotFrame = true
+					elseif status ~= ffmpeg.avutil.AVERROR_EAGAIN then
+						Log.Error(Enum.LogCategory.Video, "Failed to receive frame! %s", GetAVErrorString(status))	
+					end
+				else
+					Log.Error(Enum.LogCategory.Video, "Failed to decode packet! %s", GetAVErrorString(status))
+				end
+			elseif status == ffmpeg.avutil.AVERROR_EOF then
+				ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, nil)
+
+				self._EndOfStream = true
+			else
+				Log.Error(Enum.LogCategory.Video, "Failed to read next packet from file! %s", GetAVErrorString(status))
+			end
+		end
+	end
+
+	ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", unparsedPacketHandle))
+	ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", parsedPacketHandle))
+
+	local status = gotFrame and 0 or ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
+
+	if status == 0 then
+		self._Time = tonumber(self._FrameHandle.pts) * self._TimeBase
+		self._RefreshedRGBAImage = false
+		self._RefreshedYUVImage = false
+
+		return true, false
+	else
+		return true, true
+	end
+end
+
+function Video:GetWidth()
+	return self._Width
+end
+
+function Video:GetHeight()
+	return self._Height
+end
+
+function Video:GetDuration()
+	return self._Duration
+end
+
+function Video:Destroy()
+	if not self._Destroyed then
+		ffmpeg.avformat.avformat_close_input(ffi.new("AVFormatContext*[1]", self._SourceHandle))
+		self._SourceHandle = nil
+
+		self._VideoStreamHandle = nil
+
+		ffmpeg.avcodec.avcodec_free_context(ffi.new("AVCodecContext*[1]", self._CodecContextHandle))
+		self._CodecContextHandle = nil
+
+		ffmpeg.avcodec.av_parser_close(self._ParserContextHandle)
+		self._ParserContextHandle = nil
+
+		ffmpeg.avutil.av_frame_free(ffi.new("AVFrame*[1]", self._FrameHandle))
+		self._FrameHandle = nil
+
+		self._YImageData:release()
+		self._YImageData = nil
+
+		self._YImage:release()
+		self._YImage = nil
+				
+		self._UVImageData:release()
+		self._UVImageData = nil
+
+		self._UVImage:release()
+		self._UVImage = nil
+
+		self._RGBAImage:release()
+		self._RGBAImage = nil
+
+		self._Destroyed = true
+	end
+end
+
+return Class.CreateClass(Video, "Video")
