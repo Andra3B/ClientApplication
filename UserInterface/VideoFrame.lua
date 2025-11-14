@@ -5,7 +5,7 @@ local Interactive = loadfile("UserInterface/Interactive.lua")(
 local VideoFrame = {}
 
 function VideoFrame.Create()
-	local self = Class.CreateInstance(Interactive.Create(), Interactive)
+	local self = Class.CreateInstance(Interactive.Create(), VideoFrame)
 
 	self._Video = nil
 
@@ -16,7 +16,7 @@ function VideoFrame.Create()
 end
 
 function VideoFrame:Update(deltaTime)
-	Interactive.Update(deltaTime)
+	Interactive.Update(self, deltaTime)
 
 	local video = self:GetVideo()
 
@@ -28,7 +28,6 @@ function VideoFrame:Update(deltaTime)
 
 			video:GetNextFrame()
 			video:RefreshYUVImages()
-
 			self._Timer = video:GetTime() - lastFrameTime
 		end
 	end
@@ -50,6 +49,7 @@ function VideoFrame:Draw()
 		love.graphics.draw(
 			rgbaImage,
 			absolutePosition.X, absolutePosition.Y,
+			0,
 			absoluteSize.X / width, absoluteSize.Y / height,
 			0, 0,
 			0, 0

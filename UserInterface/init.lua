@@ -8,6 +8,9 @@ UserInterface.Button = require("UserInterface.Button")
 UserInterface.TextBox = require("UserInterface.TextBox")
 UserInterface.VideoFrame = require("UserInterface.VideoFrame")
 
+UserInterface.Font = require("UserInterface.Font")
+UserInterface.Video = require("UserInterface.Video")
+
 UserInterface.Shaders = {}
 
 UserInterface.Events = nil
@@ -139,6 +142,14 @@ end
 
 function UserInterface.Deinitialise()
 	if UserInterface.Initialised then
+		if UserInterface.Root then
+			UserInterface.Root:Destroy()
+		end
+
+		UserInterface.Root = nil
+		UserInterface.PreFocus = nil
+		UserInterface.Focus = nil
+
 		UserInterface.Shaders.YUV2RGBA:release()
 		UserInterface.Shaders.YUV2RGBA = nil
 

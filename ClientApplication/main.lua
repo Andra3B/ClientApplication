@@ -76,30 +76,14 @@ function love.load(args)
 
 	UserInterface.Initialise()
 	
-	local MyServer = NetworkServer.Create()
-	MyServer:Bind("192.168.1.204", 0)
-	MyServer:Listen()
+	local MyVideo = UserInterface.Video.CreateFromFile("Assets/Videos/Ocean.mp4")
+	local MyVideoFrame = UserInterface.VideoFrame.Create()
+	MyVideoFrame.RelativeSize = Vector2.Create(1, 1)
+	MyVideoFrame.Video = MyVideo
 
-	local serverIPAddress, serverPort = MyServer:GetLocalDetails()
+	MyVideoFrame.Playing = true
 
-	local MyClient = NetworkClient.Create()
-	MyClient:ConnectUsingIPAddress(serverIPAddress, serverPort)
-
-	local clientIPAddress, clientPort = MyClient:GetLocalDetails()
-
-	MyServer:Update()
-
-	MyClient:Send({
-		{
-			[0] = "Say",
-			[1] = "Hello, world!"
-		}
-	})
-
-	MyServer:Update()
-
-	MyServer:Destroy()
-	MyClient:Destroy()
+	UserInterface.SetRoot(MyVideoFrame)
 end
 
 function love.quit(exitCode)

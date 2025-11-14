@@ -216,65 +216,69 @@ function Video:RefreshFrame()
 end
 
 function Video:GetNextFrame()
-	local unparsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
-	local parsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
-
 	local gotFrame = false
+	
+	if not self._EndOfStream then
+		local unparsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
+		local parsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
 
-	while not (gotFrame or self._EndOfStream) do
-		ffmpeg.avcodec.av_packet_unref(unparsedPacketHandle)
-		local status = ffmpeg.avformat.av_read_frame(self._SourceHandle, unparsedPacketHandle)
 
-		if unparsedPacketHandle.stream_index == self._VideoStreamHandle.index then
-			if status == 0 then
-				local parsedPacketDataHandle = ffi.new("uint8_t*[1]")
-				local parsedPacketDataSizeHandle = ffi.new("int[1]")
+		while not gotFrame do
+			ffmpeg.avcodec.av_packet_unref(unparsedPacketHandle)
+			local status = ffmpeg.avformat.av_read_frame(self._SourceHandle, unparsedPacketHandle)
 
-				while parsedPacketDataSizeHandle[0] == 0 do
-					local bytesConsumed = ffmpeg.avcodec.av_parser_parse2(
-						self._ParserContextHandle, self._CodecContextHandle,
-						parsedPacketDataHandle, parsedPacketDataSizeHandle,
-						unparsedPacketHandle.data, unparsedPacketHandle.size,
-						unparsedPacketHandle.pts, unparsedPacketHandle.dts, unparsedPacketHandle.pos
-					)
-
-					unparsedPacketHandle.data = unparsedPacketHandle.data + bytesConsumed
-					unparsedPacketHandle.size = unparsedPacketHandle.size - bytesConsumed
-				end
-
-				ffmpeg.avcodec.av_new_packet(parsedPacketHandle, parsedPacketDataSizeHandle[0])
-				ffi.copy(parsedPacketHandle.data, parsedPacketDataHandle[0], parsedPacketDataSizeHandle[0])
-				parsedPacketHandle.pts = unparsedPacketHandle.pts
-				parsedPacketHandle.dts = unparsedPacketHandle.dts
-				parsedPacketHandle.pos = unparsedPacketHandle.pos
-				parsedPacketHandle.stream_index = unparsedPacketHandle.stream_index
-
-				status = ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, parsedPacketHandle)
-				ffmpeg.avcodec.av_packet_unref(parsedPacketHandle)
-
+			if unparsedPacketHandle.stream_index == self._VideoStreamHandle.index then
 				if status == 0 then
-					status = ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
+					local parsedPacketDataHandle = ffi.new("uint8_t*[1]")
+					local parsedPacketDataSizeHandle = ffi.new("int[1]")
+
+					while parsedPacketDataSizeHandle[0] == 0 do
+						local bytesConsumed = ffmpeg.avcodec.av_parser_parse2(
+							self._ParserContextHandle, self._CodecContextHandle,
+							parsedPacketDataHandle, parsedPacketDataSizeHandle,
+							unparsedPacketHandle.data, unparsedPacketHandle.size,
+							unparsedPacketHandle.pts, unparsedPacketHandle.dts, unparsedPacketHandle.pos
+						)
+
+						unparsedPacketHandle.data = unparsedPacketHandle.data + bytesConsumed
+						unparsedPacketHandle.size = unparsedPacketHandle.size - bytesConsumed
+					end
+
+					ffmpeg.avcodec.av_new_packet(parsedPacketHandle, parsedPacketDataSizeHandle[0])
+					ffi.copy(parsedPacketHandle.data, parsedPacketDataHandle[0], parsedPacketDataSizeHandle[0])
+					parsedPacketHandle.pts = unparsedPacketHandle.pts
+					parsedPacketHandle.dts = unparsedPacketHandle.dts
+					parsedPacketHandle.pos = unparsedPacketHandle.pos
+					parsedPacketHandle.stream_index = unparsedPacketHandle.stream_index
+
+					status = ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, parsedPacketHandle)
+					ffmpeg.avcodec.av_packet_unref(parsedPacketHandle)
 
 					if status == 0 then
-						gotFrame = true
-					elseif status ~= ffmpeg.avutil.AVERROR_EAGAIN then
-						Log.Error(Enum.LogCategory.Video, "Failed to receive frame! %s", GetAVErrorString(status))	
-					end
-				else
-					Log.Error(Enum.LogCategory.Video, "Failed to decode packet! %s", GetAVErrorString(status))
-				end
-			elseif status == ffmpeg.avutil.AVERROR_EOF then
-				ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, nil)
+						status = ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
 
-				self._EndOfStream = true
-			else
-				Log.Error(Enum.LogCategory.Video, "Failed to read next packet from file! %s", GetAVErrorString(status))
+						if status == 0 then
+							gotFrame = true
+						elseif status ~= ffmpeg.avutil.AVERROR_EAGAIN then
+							Log.Error(Enum.LogCategory.Video, "Failed to receive frame! %s", GetAVErrorString(status))	
+						end
+					else
+						Log.Error(Enum.LogCategory.Video, "Failed to decode packet! %s", GetAVErrorString(status))
+					end
+				elseif status == ffmpeg.avutil.AVERROR_EOF then
+					ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, nil)
+
+					self._EndOfStream = true
+					break
+				else
+					Log.Error(Enum.LogCategory.Video, "Failed to read next packet from file! %s", GetAVErrorString(status))
+				end
 			end
 		end
+		
+		ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", unparsedPacketHandle))
+		ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", parsedPacketHandle))
 	end
-
-	ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", unparsedPacketHandle))
-	ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", parsedPacketHandle))
 
 	local status = gotFrame and 0 or ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
 

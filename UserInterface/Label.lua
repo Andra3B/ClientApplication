@@ -1,4 +1,3 @@
-local Font = require("Font")
 local Frame = require("UserInterface.Frame")
 
 local Label = {}
@@ -6,7 +5,7 @@ local Label = {}
 function Label.Create()
 	local self = Class.CreateInstance(Frame.Create(), Label)
 	
-	self._Font = Font.Default
+	self._Font = UserInterface.Font.Default
 
 	self._Text = ""
 	self._TextSize = 16
