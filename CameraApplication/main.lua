@@ -56,40 +56,7 @@ FFILoader = require("FFILoader")
 
 ffmpeg = require("ffmpeg.init")
 
-local ApplicationNetworkClient = nil
-
-local ConnectionInputIPAddressTextBox = nil
-local ConnectionInputPortTextBox = nil
-local ConnectionInputButton = nil
-
-local LivestreamVideoFrame = nil
-
-local StatusLabel = nil
-
-local function OnConnectionInputButtonClicked(pressed)
-	if pressed then
-		local ipAddress = ConnectionInputIPAddressTextBox.Text
-		local port = ConnectionInputPortTextBox.Text
-
-		local success, errorMessage = ApplicationNetworkClient:ConnectUsingIPAddress(
-			ipAddress, port,
-			3
-		)
-
-		if success then
-			StatusLabel.Text = string.format(
-				"Connection Details: %s:%s",
-				ApplicationNetworkClient:GetRemoteDetails()
-			)
-		else
-			StatusLabel.Text = string.format("Failed to connect to %s:%s! %s",
-				ipAddress,
-				port,
-				errorMessage
-			)
-		end
-	end
-end
+local ApplicationNetworkServer = nil
 
 function love.load(args)
 	local width, height = love.window.getDesktopDimensions(1)
@@ -103,58 +70,23 @@ function love.load(args)
 
 	UserInterface.Initialise()
 
-	ApplicationNetworkClient = NetworkClient.Create()
-	ApplicationNetworkClient:Bind("192.168.1.131", 0)
+	ApplicationNetworkServer = NetworkServer.Create()
+	ApplicationNetworkServer:Bind("192.168.1.131", 0)
+	ApplicationNetworkServer:Listen()
 
 	local Root = UserInterface.Frame.Create()
 	Root.RelativeSize = Vector2.Create(1, 1)
 	Root.BackgroundColour = Vector4.Create(1, 1, 1, 1)
-
-	ConnectionInput = UserInterface.Frame.Create()
-	ConnectionInput.RelativeSize = Vector2.Create(0.95, 0.2)
-	ConnectionInput.RelativePosition = Vector2.Create(0.025, 0.025)
-	ConnectionInput.BackgroundColour = Vector4.Zero
-
-	ConnectionInputIPAddressTextBox = UserInterface.TextBox.Create()
-	ConnectionInputIPAddressTextBox.RelativeSize = Vector2.Create(0.5, 0.5)
-	ConnectionInputIPAddressTextBox.BackgroundColour = Vector4.Create(0, 0, 0, 0.1)
-	ConnectionInputIPAddressTextBox.PlaceholderText = "Enter IP Address..."
-
-	ConnectionInputPortTextBox = UserInterface.TextBox.Create()
-	ConnectionInputPortTextBox.RelativeSize = Vector2.Create(0.5, 0.5)
-	ConnectionInputPortTextBox.RelativePosition = Vector2.Create(0.5, 0)
-	ConnectionInputPortTextBox.BackgroundColour = Vector4.Create(0, 0, 0, 0.1)
-	ConnectionInputPortTextBox.PlaceholderText = "Enter Port..."
-
-	ConnectionInputButton = UserInterface.Button.Create()
-	ConnectionInputButton.RelativeSize = Vector2.Create(1, 0.5)
-	ConnectionInputButton.RelativePosition = Vector2.Create(0, 0.5)
-	ConnectionInputButton.BackgroundColour = Vector4.Create(0, 0, 0, 0.1)
-	ConnectionInputButton.TextHorizontalAlignment = Enum.HorizontalAlignment.Middle
-	ConnectionInputButton.Text = "Connect"
-
-	ConnectionInputButton.Events:Listen("Pressed", OnConnectionInputButtonClicked)
-
-	LivestreamVideoFrame = UserInterface.VideoFrame.Create()
-	LivestreamVideoFrame.RelativeSize = Vector2.Create(0.95, 0.625)
-	LivestreamVideoFrame.RelativePosition = Vector2.Create(0.025, 0.25)
-	LivestreamVideoFrame.BackgroundColour = Vector4.Create(0, 0, 0, 0.1)
 
 	StatusLabel = UserInterface.Label.Create()
 	StatusLabel.RelativeSize = Vector2.Create(0.95, 0.075)
 	StatusLabel.RelativePosition = Vector2.Create(0.025, 0.9)
 	StatusLabel.BackgroundColour = Vector4.Create(0, 0, 0, 0.1)
 	StatusLabel.Text = string.format(
-		"Application Address: %s:%s",
-		ApplicationNetworkClient:GetLocalDetails()
+		"Local IP Address: %s, Local Port: %s",
+		ApplicationNetworkServer:GetLocalDetails()
 	)
 
-	ConnectionInput:AddChild(ConnectionInputIPAddressTextBox)
-	ConnectionInput:AddChild(ConnectionInputPortTextBox)
-	ConnectionInput:AddChild(ConnectionInputButton)
-
-	Root:AddChild(ConnectionInput)
-	Root:AddChild(LivestreamVideoFrame)
 	Root:AddChild(StatusLabel)
 
 	UserInterface.SetRoot(Root)
@@ -163,12 +95,12 @@ end
 function love.quit(exitCode)
 	UserInterface.Deinitialise()
 	
-	ApplicationNetworkClient:Destroy()
-	ApplicationNetworkClient = nil
+	ApplicationNetworkServer:Destroy()
+	ApplicationNetworkServer = nil
 end
 
 function love.update(deltaTime)
-	ApplicationNetworkClient:Update()
+	ApplicationNetworkServer:Update()
 
 	UserInterface.Update(deltaTime)
 end

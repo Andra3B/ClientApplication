@@ -20,6 +20,14 @@ UserInterface.Root = nil
 UserInterface.PreFocus = nil
 UserInterface.Focus = nil
 
+local MOUSE_INPUT_STRINGS = {
+	[1] = "leftmousebutton",
+	[2] = "rightmousebutton",
+	[3] = "middlemousebutton",
+	[4] = "firstmousebutton",
+	[5] = "secondmousebutton"
+}
+
 function UserInterface.Initialise()
 	if not UserInterface.Initialised then
 		UserInterface.Shaders.YUV2RGBA = love.graphics.newShader(
@@ -49,12 +57,18 @@ end
 
 function UserInterface.Input(inputType, scancode, state)
 	if inputType == Enum.InputType.Mouse then
+		if type(scancode) == "number" then
+			scancode = MOUSE_INPUT_STRINGS[scancode]
+
+			if not scancode then
+				return
+			end
+		end
+
 		local interactiveFrame = UserInterface.GetFrameContainingPoint(state.X, state.Y, UserInterface.Root, "Interactive")
 
 		if scancode == "mousemovement" then
 			if interactiveFrame ~= UserInterface.PreFocus then
-				UserInterface.Events:Push("PreFocusChanged", interactiveFrame)
-
 				if UserInterface.PreFocus then
 					UserInterface.PreFocus:SetHovering(false)
 				end
@@ -67,8 +81,6 @@ function UserInterface.Input(inputType, scancode, state)
 			end
 		elseif scancode == "leftmousebutton" and state.Z < 0 then
 			if interactiveFrame ~= UserInterface.Focus then
-				UserInterface.Events:Push("FocusChanged", interactiveFrame)
-
 				if UserInterface.Focus then
 					UserInterface.Focus:SetFocused(false)
 				end
@@ -101,12 +113,16 @@ function UserInterface.GetFrameContainingPoint(x, y, frame, frameType)
 		local absoluteWidth, absoluteHeight = frame._AbsoluteSize:Unpack()
 
 		if x >= absoluteX and y >= absoluteY and x <= (absoluteX + absoluteWidth) and y <= (absoluteY + absoluteHeight) then
-			if not frameType or Class.IsA(childContainingFrame, frameType) then
+			if not frameType or Class.IsA(frame, frameType) then
 				containingFrame = frame
 			end
 
 			for childIndex = #frame._Children, 1, -1 do
-				local childContainingFrame = UserInterface.GetFrameContainingPoint(x, y, frame._Children[childIndex])
+				local childContainingFrame = UserInterface.GetFrameContainingPoint(
+					x, y,
+					frame._Children[childIndex],
+					frameType
+				)
 
 				if childContainingFrame then
 					containingFrame = childContainingFrame

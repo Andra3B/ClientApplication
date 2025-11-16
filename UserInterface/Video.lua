@@ -215,16 +215,9 @@ function Video:RefreshFrame()
 	return self._RGBAImage
 end
 
-function Video:GetNextFrame()
-	local gotFrame = false
-	
+function Video:GetNextPacket(unparsedPacketHandle, parsedPacketHandle)
 	if not self._EndOfStream then
-		local unparsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
-		local parsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
-
-
-		while not gotFrame do
-			ffmpeg.avcodec.av_packet_unref(unparsedPacketHandle)
+		while true do
 			local status = ffmpeg.avformat.av_read_frame(self._SourceHandle, unparsedPacketHandle)
 
 			if unparsedPacketHandle.stream_index == self._VideoStreamHandle.index then
@@ -251,28 +244,51 @@ function Video:GetNextFrame()
 					parsedPacketHandle.pos = unparsedPacketHandle.pos
 					parsedPacketHandle.stream_index = unparsedPacketHandle.stream_index
 
-					status = ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, parsedPacketHandle)
-					ffmpeg.avcodec.av_packet_unref(parsedPacketHandle)
+					return true
+				else
+					return false, GetAVErrorString(status)
+				end
+			elseif status == ffmpeg.avutil.AVERROR_EOF then
+				ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, nil)
+
+				self._EndOfStream = true
+				break
+			end
+		end
+	end
+
+	return false
+end
+
+function Video:GetNextFrame()
+	local gotFrame = false
+	
+	if not self._EndOfStream then
+		local unparsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
+		local parsedPacketHandle = ffmpeg.avcodec.av_packet_alloc()
+
+		while not gotFrame do
+			ffmpeg.avcodec.av_packet_unref(unparsedPacketHandle)
+			ffmpeg.avcodec.av_packet_unref(parsedPacketHandle)
+
+			local success, errorMessage = self:GetNextPacket(unparsedPacketHandle, parsedPacketHandle)
+
+			if success then
+				status = ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, parsedPacketHandle)
+
+				if status == 0 then
+					status = ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
 
 					if status == 0 then
-						status = ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
-
-						if status == 0 then
-							gotFrame = true
-						elseif status ~= ffmpeg.avutil.AVERROR_EAGAIN then
-							Log.Error(Enum.LogCategory.Video, "Failed to receive frame! %s", GetAVErrorString(status))	
-						end
-					else
-						Log.Error(Enum.LogCategory.Video, "Failed to decode packet! %s", GetAVErrorString(status))
+						gotFrame = true
+					elseif status ~= ffmpeg.avutil.AVERROR_EAGAIN then
+						Log.Error(Enum.LogCategory.Video, "Failed to receive frame! %s", GetAVErrorString(status))	
 					end
-				elseif status == ffmpeg.avutil.AVERROR_EOF then
-					ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, nil)
-
-					self._EndOfStream = true
-					break
 				else
-					Log.Error(Enum.LogCategory.Video, "Failed to read next packet from file! %s", GetAVErrorString(status))
+					Log.Error(Enum.LogCategory.Video, "Failed to decode packet! %s", GetAVErrorString(status))
 				end
+			else
+				Log.Error(Enum.LogCategory.Video, "Failed to read next packet from file! %s", errorMessage)
 			end
 		end
 		
@@ -290,6 +306,19 @@ function Video:GetNextFrame()
 		return true, false
 	else
 		return true, true
+	end
+end
+
+function Video:CreateOutput(url)
+	local muxerContextHandle = ffi.new("AVFormatContext[1]")
+	ffmpeg.avformat.avformat_alloc_output_context2(muxerHandle, nil, "mpegts", nil)
+
+	if muxerHandle ~= nil then
+		local videoStreamHandle = ffmpeg.avformat.avformat_new_stream(muxerHandle, nil)
+
+		if videoStreamHandle ~= nil then
+			local status = ffmpeg.avformat.avcodec_parameters_from_context()
+		end
 	end
 end
 

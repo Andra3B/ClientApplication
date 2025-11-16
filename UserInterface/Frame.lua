@@ -62,8 +62,8 @@ end
 function Frame:Refresh()
 	Hierarchy.Refresh(self)
 
-	local parentAbsolutePosition
-	local parentAbsoluteSize
+	local parentAbsolutePosition = nil
+	local parentAbsoluteSize = nil
 	local parent = self._Parent
 
 	if parent then

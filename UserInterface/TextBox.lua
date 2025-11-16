@@ -15,12 +15,6 @@ function TextBox.Create()
 	return self
 end
 
-function TextBox:Refresh()
-	Interactive.Refresh(self)
-
-	self:SetText(self:GetText())
-end
-
 function TextBox:Draw()
 	Interactive.Draw(self)
 
@@ -151,18 +145,6 @@ function TextBox:Input(inputType, scancode, state)
 
 			elseif scancode == "return" then
 				self:Submit()
-			end
-		elseif inputType == Enum.InputType.Mouse then
-			if scancode == "leftmousebutton" then
-				local text = self:GetText()
-				
-				if #text == 0 then
-					self:SetCursorPosition(0)
-				else
-					self:SetCursorPosition(math.floor((
-						((state.X - self._AbsoluteTextOffset.X) / self._AbsoluteTextSize.X) * utf8.len(text)
-					) + 0.5))
-				end
 			end
 		end
 	end

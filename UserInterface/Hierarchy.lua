@@ -28,7 +28,6 @@ function Hierarchy:RecursiveUpdate(deltaTime)
 end
 
 function Hierarchy:Refresh()
-	self._Events:Push("Refreshed")
 end
 
 function Hierarchy:RecursiveRefresh()
@@ -94,18 +93,19 @@ function Hierarchy:SetParent(parent)
 		self._Parent = nil
 	end
 
-	if not parent then
-		self._Parent = nil
-	elseif parent ~= self and Class.IsA(parent, "Hierarchy") then
-		self._Parent = parent
+	if parent then
+		if parent ~= self and Class.IsA(parent, "Hierarchy") then
+			self._Parent = parent
 
-		table.insert(parent._Children, self)
+			table.insert(parent._Children, self)
+			self:RecursiveRefresh()
+		else
+			return false
+		end
 	else
-		return false
+		self._Parent = nil
 	end
-
-	self:RecursiveRefresh()
-
+	
 	return true
 end
 
@@ -217,7 +217,6 @@ end
 
 function Hierarchy:Destroy()
 	if not self._Destroyed then
-		
 		for _, child in ipairs(self._Children) do
 			child:Destroy()
 		end

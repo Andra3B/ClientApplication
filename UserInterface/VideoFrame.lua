@@ -1,11 +1,9 @@
-local Interactive = loadfile("UserInterface/Interactive.lua")(
-	require("UserInterface.Frame")
-)
+local Frame = require("UserInterface.Frame")
 
 local VideoFrame = {}
 
 function VideoFrame.Create()
-	local self = Class.CreateInstance(Interactive.Create(), VideoFrame)
+	local self = Class.CreateInstance(Frame.Create(), VideoFrame)
 
 	self._Video = nil
 
@@ -16,7 +14,7 @@ function VideoFrame.Create()
 end
 
 function VideoFrame:Update(deltaTime)
-	Interactive.Update(self, deltaTime)
+	Frame.Update(self, deltaTime)
 
 	local video = self:GetVideo()
 
@@ -55,7 +53,7 @@ function VideoFrame:Draw()
 			0, 0
 		)
 	else
-		Interactive.Draw(self)
+		Frame.Draw(self)
 	end
 end
 
@@ -90,8 +88,8 @@ function VideoFrame:Destroy()
 
 		self._Video = nil
 
-		Interactive.Destroy(self)
+		Frame.Destroy(self)
 	end
 end
 
-return Class.CreateClass(VideoFrame, "VideoFrame", Interactive)
+return Class.CreateClass(VideoFrame, "VideoFrame", Frame)

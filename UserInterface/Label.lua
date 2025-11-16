@@ -20,6 +20,12 @@ function Label.Create()
 	return self
 end
 
+function Label:Refresh()
+	Frame.Refresh(self)
+
+	self:SetText(self:GetText())
+end
+
 function Label:Draw()
 	Frame.Draw(self)
 
