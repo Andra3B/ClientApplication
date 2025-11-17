@@ -63,6 +63,7 @@ local ConnectionInputPortTextBox = nil
 local ConnectionInputButton = nil
 
 local LivestreamVideoFrame = nil
+local LivestreamButton = nil
 
 local StatusLabel = nil
 
@@ -91,6 +92,31 @@ local function OnConnectionInputButtonClicked(pressed)
 	end
 end
 
+local function OnLivestreamReady(success)
+	if success == "true" then
+		local video = UserInterface.Video.CreateFromURL("udp://192.168.1.204:5001")
+	end
+end
+
+local function OnLivestreamButtonClicked(pressed)
+	if pressed and ApplicationNetworkClient:GetRemoteDetails() then
+		if LivestreamVideoFrame.Video then
+			ApplicationNetworkClient:Send({{
+				"StopLivestream"
+			}})
+
+			LivestreamButton.Text = "Start Livestream"
+		else
+			ApplicationNetworkClient:Send({{
+				"StartLivestream",
+				5001
+			}})
+
+			LivestreamButton.Text = "Stop Livestream"
+		end
+	end
+end
+
 function love.load(args)
 	local width, height = love.window.getDesktopDimensions(1)
 	love.window.setMode(width * 0.5, height * 0.5, {
@@ -104,7 +130,10 @@ function love.load(args)
 	UserInterface.Initialise()
 
 	ApplicationNetworkClient = NetworkClient.Create()
-	ApplicationNetworkClient:Bind("192.168.1.131", 0)
+
+	ApplicationNetworkClient.Events:Listen("LivestreamReady", OnLivestreamReady)
+
+	ApplicationNetworkClient:Bind("192.168.1.204", 0)
 
 	local Root = UserInterface.Frame.Create()
 	Root.RelativeSize = Vector2.Create(1, 1)
@@ -136,9 +165,18 @@ function love.load(args)
 	ConnectionInputButton.Events:Listen("Pressed", OnConnectionInputButtonClicked)
 
 	LivestreamVideoFrame = UserInterface.VideoFrame.Create()
-	LivestreamVideoFrame.RelativeSize = Vector2.Create(0.95, 0.625)
+	LivestreamVideoFrame.RelativeSize = Vector2.Create(0.95, 0.575)
 	LivestreamVideoFrame.RelativePosition = Vector2.Create(0.025, 0.25)
 	LivestreamVideoFrame.BackgroundColour = Vector4.Create(0, 0, 0, 0.1)
+
+	LivestreamButton = UserInterface.Button.Create()
+	LivestreamButton.RelativeSize = Vector2.Create(0.95, 0.05)
+	LivestreamButton.RelativePosition = Vector2.Create(0.025, 0.825)
+	LivestreamButton.BackgroundColour = Vector4.Create(0, 0, 0, 0.1)
+	LivestreamButton.TextHorizontalAlignment = Enum.HorizontalAlignment.Middle
+	LivestreamButton.Text = "Start Livestream"
+
+	LivestreamButton.Events:Listen("Pressed", OnLivestreamButtonClicked)
 
 	StatusLabel = UserInterface.Label.Create()
 	StatusLabel.RelativeSize = Vector2.Create(0.95, 0.075)
@@ -155,6 +193,7 @@ function love.load(args)
 
 	Root:AddChild(ConnectionInput)
 	Root:AddChild(LivestreamVideoFrame)
+	Root:AddChild(LivestreamButton)
 	Root:AddChild(StatusLabel)
 
 	UserInterface.SetRoot(Root)

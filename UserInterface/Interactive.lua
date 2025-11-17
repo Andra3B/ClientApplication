@@ -64,8 +64,8 @@ function Interactive:GetInactiveBackgroundColour()
 	return self._InactiveBackgroundColour
 end
 
-function Interactive:GetInactiveColourMultiplier(multiplier)
-	self._InactiveColourMultiplier = multiplier
+function Interactive:GetInactiveColourMultiplier()
+	return self._InactiveColourMultiplier
 end
 
 function Interactive:SetActive(active)

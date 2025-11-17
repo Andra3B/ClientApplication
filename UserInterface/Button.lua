@@ -15,7 +15,7 @@ function Button.Create()
 	return self
 end
 
-function Interactive:Input(inputType, scancode, state)
+function Button:Input(inputType, scancode, state)
 	if inputType == Enum.InputType.Mouse and scancode == "leftmousebutton" then
 		self._Pressed = state.Z < 0
 
@@ -35,15 +35,15 @@ function Button:GetBackgroundColour()
 	end
 end
 
-function Interactive:IsPressed()
+function Button:IsPressed()
 	return self._Pressed
 end
 
-function Interactive:GetPressedBackgroundColour()
+function Button:GetPressedBackgroundColour()
 	return self._PressedBackgroundColour
 end
 
-function Interactive:GetPressedColourMultiplier()
+function Button:GetPressedColourMultiplier()
 	return self._PressedColourMultiplier
 end
 

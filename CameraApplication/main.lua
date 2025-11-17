@@ -57,6 +57,19 @@ FFILoader = require("FFILoader")
 ffmpeg = require("ffmpeg.init")
 
 local ApplicationNetworkServer = nil
+local Livestream = nil
+
+local function OnStartLivestream(from, port)
+	local ipAddress = from:GetRemoteDetails()
+
+	Livestream:StopLivestream()
+	local success = Livestream:StartLivestream("udp://"..ipAddress..":"..port)
+
+	from:Send({{
+		"LivestreamReady",
+		tostring(success)
+	}})
+end
 
 function love.load(args)
 	local width, height = love.window.getDesktopDimensions(1)
@@ -70,8 +83,13 @@ function love.load(args)
 
 	UserInterface.Initialise()
 
+	Livestream = UserInterface.Video.CreateFromURL("Assets/Videos/Ocean.mp4")
+
 	ApplicationNetworkServer = NetworkServer.Create()
-	ApplicationNetworkServer:Bind("192.168.1.131", 0)
+
+	ApplicationNetworkServer.Events:Listen("StartLivestream", OnStartLivestream)
+
+	ApplicationNetworkServer:Bind("192.168.1.204", 0)
 	ApplicationNetworkServer:Listen()
 
 	local Root = UserInterface.Frame.Create()
@@ -95,6 +113,9 @@ end
 function love.quit(exitCode)
 	UserInterface.Deinitialise()
 	
+	Livestream:Destroy()
+	Livestream = nil
+
 	ApplicationNetworkServer:Destroy()
 	ApplicationNetworkServer = nil
 end
