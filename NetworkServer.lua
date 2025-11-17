@@ -11,7 +11,7 @@ function NetworkServer.Create(serverSocket)
 	return self
 end
 
-function NetworkServer:GetNetworkClient(index)
+function NetworkServer:GetClient(index)
 	return self._Connections[index]
 end
 

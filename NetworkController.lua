@@ -129,6 +129,16 @@ function NetworkController.GetCommandsFromString(commandsString)
 	end
 end
 
+function NetworkController.GetFreePort()
+	local portFinder = socket.tcp()
+	portFinder:bind("*", 0, 1)
+
+	local _, freePort = portFinder:getsocketname()
+	portFinder:close()
+
+	return freePort
+end
+
 function NetworkController:GetEvents()
 	return self._Events
 end

@@ -40,7 +40,8 @@ function Video.CreateFromHandle(sourceHandle)
 					self._TimeBase = videoStreamHandle.time_base.num / videoStreamHandle.time_base.den
 					self._Duration =  tonumber(sourceHandle.duration / ffmpeg.avutil.AV_TIME_BASE)
 
-					self._Time = 0
+					self._PacketTime = 0
+					self._FrameTime = 0
 
 					self._PacketHandle = ffmpeg.avcodec.av_packet_alloc()
 					self._FrameHandle = ffmpeg.avutil.av_frame_alloc()
@@ -100,8 +101,12 @@ function Video:GetRGBAImage()
 	return self._RGBAImage
 end
 
-function Video:GetTime()
-	return self._Time
+function Video:GetPacketTime()
+	return self._PacketTime
+end
+
+function Video:GetFrameTime()
+	return self._FrameTime
 end
 
 function Video:SetTime(time)
@@ -121,7 +126,7 @@ function Video:SetTime(time)
 		ffmpeg.avcodec.avcodec_flush_buffers(self._CodecContextHandle)
 
 		self._EndOfStream = false
-		self._Time = time
+
 		return true
 	else
 		Log.Error(Enum.LogCategory.Video, "Failed to set video time!")
@@ -208,17 +213,6 @@ function Video:RefreshYUVImages()
 	end
 end
 
-function Video:RefreshFrame()
-	if not self._FrameRefreshed then
-		self:RefreshYUVImages()
-		self:RefreshRGBAImage()
-	
-		self._FrameRefreshed = true
-	end
-
-	return self._RGBAImage
-end
-
 function Video:GetNextPacket()
 	if not self._EndOfStream then
 		local parsedPacketHandle = self._PacketHandle
@@ -255,20 +249,22 @@ function Video:GetNextPacket()
 					parsedPacketHandle.dts = unparsedPacketHandle.dts
 					parsedPacketHandle.pos = unparsedPacketHandle.pos
 					parsedPacketHandle.stream_index = unparsedPacketHandle.stream_index
+					
+					self._PacketTime = tonumber(parsedPacketHandle.pts) * self._TimeBase
+
+					break
+				elseif status == ffmpeg.avutil.AVERROR_EOF then
+					ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, nil)
+				
+					self._EndOfStream = true
 
 					break
 				else
 					success = false
 					errorMessage = GetAVErrorString(status)
-
+					
 					break
 				end
-			elseif status == ffmpeg.avutil.AVERROR_EOF then
-				ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, nil)
-
-				self._EndOfStream = true
-
-				break
 			end
 		end
 
@@ -281,44 +277,40 @@ function Video:GetNextPacket()
 end
 
 function Video:GetNextFrame()
-	local gotFrame = false
-	
-	if not self._EndOfStream then
-		while not gotFrame do
-			ffmpeg.avcodec.av_packet_unref(unparsedPacketHandle)
-
-			local success, errorMessage = self:GetNextPacket(unparsedPacketHandle, parsedPacketHandle)
-
-			if success then
-				status = ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, parsedPacketHandle)
-
-				if status == 0 then
-					status = ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
-
-					if status == 0 then
-						gotFrame = true
-					elseif status ~= ffmpeg.avutil.AVERROR_EAGAIN then
-						Log.Error(Enum.LogCategory.Video, "Failed to receive frame! %s", GetAVErrorString(status))	
-					end
-				else
-					Log.Error(Enum.LogCategory.Video, "Failed to decode packet! %s", GetAVErrorString(status))
-				end
-			else
-				Log.Error(Enum.LogCategory.Video, "Failed to read next packet from file! %s", errorMessage)
-			end
+	if self._EndOfStream then
+		if ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle) == 0 then
+			self._RefreshedRGBAImage = false
+			self._RefreshedYUVImage = false
+			
+			return true, false, false
+		else
+			return true, false, true
 		end
-	end
-
-	local status = gotFrame and 0 or ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
-
-	if status == 0 then
-		self._Time = tonumber(self._FrameHandle.pts) * self._TimeBase
-		self._RefreshedRGBAImage = false
-		self._RefreshedYUVImage = false
-
-		return true, false
 	else
-		return true, true
+		status = ffmpeg.avcodec.avcodec_send_packet(self._CodecContextHandle, self._PacketHandle)
+
+		if status == 0 then
+			status = ffmpeg.avcodec.avcodec_receive_frame(self._CodecContextHandle, self._FrameHandle)
+
+			if status == 0 then
+				self._RefreshedRGBAImage = false
+				self._RefreshedYUVImage = false
+
+				self._FrameTime = tonumber(self._FrameHandle.pts) * self._TimeBase
+
+				return true, false, false
+			elseif status == ffmpeg.avutil.AVERROR_EAGAIN then			
+				return true, true, false
+			else
+				Log.Error(Enum.LogCategory.Video, "Failed to receive frame! %s", GetAVErrorString(status))
+
+				return false
+			end
+		else
+			Log.Error(Enum.LogCategory.Video, "Failed to decode packet! %s", GetAVErrorString(status))
+
+			return false
+		end
 	end
 end
 
@@ -334,13 +326,15 @@ function Video:StartLivestream(url)
 		self._LivestreamVideoStreamHandle = livestreamVideoStreamHandle
 
 		ffmpeg.avcodec.avcodec_parameters_copy(livestreamVideoStreamHandle.codecpar, self._VideoStreamHandle.codecpar)
-		livestreamVideoStreamHandle.time_base = self._VideoStreamHandle.time_base
+		livestreamVideoStreamHandle.codecpar.codec_tag = 0
 
-		local status = ffmpeg.avformat.avio_open2(
-			ffi.new("AVIOContext*[1]", livestreamHandle.pb), url, ffmpeg.avformat.AVIO_FLAG_WRITE, nil, nil
+		local pbHandleHandle = ffi.new("AVIOContext*[1]")
+		ffmpeg.avformat.avio_open2(
+			pbHandleHandle, livestreamHandle.url, ffmpeg.avformat.AVIO_FLAG_WRITE, nil, nil
 		)
+		livestreamHandle.pb = pbHandleHandle[0]
 
-		ffmpeg.avformat.avformat_write_header(livestreamHandle, nil)
+		local response = ffmpeg.avformat.avformat_write_header(livestreamHandle, nil)
 
 		return true
 	end
@@ -353,26 +347,29 @@ function Video:IsLivestreaming()
 end
 
 function Video:SendPacketToLivestream()
-	local packetHandle = ffmpeg.avcodec.av_packet_alloc()
-	ffmpeg.avcodec.av_packet_ref(packetHandle, self._PacketHandle)
+	if self._LivestreamHandle ~= nil then
+		local packetHandle = ffmpeg.avcodec.av_packet_alloc()
 
-	packetHandle.pts = ffmpeg.avformat.av_rescale_q(
-		packetHandle.pts, self._VideoStreamHandle.time_base, self._LivestreamVideoStreamHandle.time_base
-	)
+		ffmpeg.avcodec.av_packet_ref(packetHandle, self._PacketHandle)
 
-	packetHandle.dts = ffmpeg.avformat.av_rescale_q(
-		packetHandle.dts, self._VideoStreamHandle.time_base, self._LivestreamVideoStreamHandle.time_base
-	)
+		packetHandle.pts = ffmpeg.avutil.av_rescale_q(
+			packetHandle.pts, self._VideoStreamHandle.time_base, self._LivestreamVideoStreamHandle.time_base
+		)
 
-	packetHandle.duration = ffmpeg.avformat.av_rescale_q(
-		packetHandle.duration, self._VideoStreamHandle.time_base, self._LivestreamVideoStreamHandle.time_base
-	)
+		packetHandle.dts = ffmpeg.avutil.av_rescale_q(
+			packetHandle.dts, self._VideoStreamHandle.time_base, self._LivestreamVideoStreamHandle.time_base
+		)
 
-	packetHandle.stream_index = self._LivestreamVideoStreamHandle.index
+		packetHandle.duration = ffmpeg.avutil.av_rescale_q(
+			packetHandle.duration, self._VideoStreamHandle.time_base, self._LivestreamVideoStreamHandle.time_base
+		)
 
-	ffmpeg.avformat_av_interleaved_write_frame(self._LivestreamHandle, packetHandle)
+		packetHandle.stream_index = self._LivestreamVideoStreamHandle.index
 
-	ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", packetHandle))
+		ffmpeg.avformat.av_interleaved_write_frame(self._LivestreamHandle, packetHandle)
+
+		ffmpeg.avcodec.av_packet_free(ffi.new("AVPacket*[1]", packetHandle))
+	end
 end
 
 function Video:StopLivestream()
@@ -401,6 +398,8 @@ end
 
 function Video:Destroy()
 	if not self._Destroyed then
+		self:StopLivestream()
+
 		ffmpeg.avformat.avformat_close_input(ffi.new("AVFormatContext*[1]", self._SourceHandle))
 		self._SourceHandle = nil
 
@@ -432,9 +431,7 @@ function Video:Destroy()
 
 		self._RGBAImage:release()
 		self._RGBAImage = nil
-
-		self:StopLivestream()
-
+		
 		self._Destroyed = true
 	end
 end

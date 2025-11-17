@@ -59,16 +59,20 @@ ffmpeg = require("ffmpeg.init")
 local ApplicationNetworkServer = nil
 local Livestream = nil
 
+local livestreamTimer = 0
+
 local function OnStartLivestream(from, port)
-	local ipAddress = from:GetRemoteDetails()
+	livestreamTimer = 0
+	Livestream = UserInterface.Video.CreateFromURL("Assets/Videos/WateringCan.mp4")
+	Livestream:StartLivestream("udp://"..from:GetRemoteDetails()..":"..port)
+end
 
-	Livestream:StopLivestream()
-	local success = Livestream:StartLivestream("udp://"..ipAddress..":"..port)
-
-	from:Send({{
-		"LivestreamReady",
-		tostring(success)
-	}})
+local function OnStopLivestream(from)
+	if Livestream then
+		Livestream:Destroy()
+	end
+	
+	Livestream = nil
 end
 
 function love.load(args)
@@ -83,11 +87,10 @@ function love.load(args)
 
 	UserInterface.Initialise()
 
-	Livestream = UserInterface.Video.CreateFromURL("Assets/Videos/Ocean.mp4")
-
 	ApplicationNetworkServer = NetworkServer.Create()
 
 	ApplicationNetworkServer.Events:Listen("StartLivestream", OnStartLivestream)
+	ApplicationNetworkServer.Events:Listen("StopLivestream", OnStopLivestream)
 
 	ApplicationNetworkServer:Bind("192.168.1.204", 0)
 	ApplicationNetworkServer:Listen()
@@ -113,8 +116,7 @@ end
 function love.quit(exitCode)
 	UserInterface.Deinitialise()
 	
-	Livestream:Destroy()
-	Livestream = nil
+	OnStopLivestream()
 
 	ApplicationNetworkServer:Destroy()
 	ApplicationNetworkServer = nil
@@ -124,6 +126,24 @@ function love.update(deltaTime)
 	ApplicationNetworkServer:Update()
 
 	UserInterface.Update(deltaTime)
+	
+	if Livestream then
+		livestreamTimer = livestreamTimer + deltaTime
+
+		if Livestream.PacketTime - livestreamTimer < 0 then
+			if Livestream:GetNextPacket() then
+				if Livestream.EndOfStream then
+					ApplicationNetworkServer:GetClient(1):Send({{
+						"StopLivestream"
+					}})
+					
+					OnStopLivestream()
+				else
+					Livestream:SendPacketToLivestream()
+				end
+			end
+		end
+	end
 end
 
 function love.draw()

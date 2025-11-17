@@ -33,7 +33,7 @@
 	"compounds": [
 		{
 			"name": "Debug All",
-			"configurations": ["Debug Camera", "Debug Client"]
+			"configurations": ["Debug Client", "Debug Camera"]
 		}
 	]
 }

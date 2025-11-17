@@ -8,7 +8,7 @@ function VideoFrame.Create()
 	self._Video = nil
 
 	self._Playing = false
-	self._Timer = 0
+	self._Time = 0
 
 	return self
 end
@@ -16,17 +16,33 @@ end
 function VideoFrame:Update(deltaTime)
 	Frame.Update(self, deltaTime)
 
-	local video = self:GetVideo()
+	if self._Playing then
+		local video = self:GetVideo()
 
-	if video and self:IsPlaying() and not video:IsEndOfStream() then
-		self._Timer = self._Timer - deltaTime
+		if video then
+			self._Time = self._Time + deltaTime
 
-		if self._Timer <= 0 then
-			local lastFrameTime = video:GetTime()
+			if video.FrameTime - self._Time < 0 then
+				local success, needsAnotherPacket, endOfFrames
 
-			video:GetNextFrame()
-			video:RefreshYUVImages()
-			self._Timer = video:GetTime() - lastFrameTime
+				while true do
+					success = video:GetNextPacket()
+
+					if not success or video.EndOfStream then
+						self:SetPlaying(false)
+
+						break
+					else
+						success, needsAnotherPacket, endOfFrames = video:GetNextFrame()
+						
+						if success and not needsAnotherPacket then
+							break
+						end
+					end
+				end
+
+				video:RefreshYUVImages()
+			end
 		end
 	end
 end
@@ -62,14 +78,8 @@ function VideoFrame:GetVideo()
 end
 
 function VideoFrame:SetVideo(video)
-	if Class.IsA(video, "Video") then
-		self._Video = video
-		self._Timer = 0
-
-		return true
-	end
-
-	return false
+	self._Video = video
+	self._Time = 0
 end
 
 function VideoFrame:IsPlaying()

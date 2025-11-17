@@ -92,25 +92,32 @@ local function OnConnectionInputButtonClicked(pressed)
 	end
 end
 
-local function OnLivestreamReady(success)
-	if success == "true" then
-		local video = UserInterface.Video.CreateFromURL("udp://192.168.1.204:5001")
-	end
+local function OnStopLivestream()
+	LivestreamVideoFrame.Video:Destroy()
+	LivestreamVideoFrame.Video = nil
+
+	LivestreamButton.Text = "Start Livestream"
 end
 
 local function OnLivestreamButtonClicked(pressed)
 	if pressed and ApplicationNetworkClient:GetRemoteDetails() then
 		if LivestreamVideoFrame.Video then
+			LivestreamVideoFrame.Video:Destroy()
+			LivestreamVideoFrame.Video = nil
+			
+			LivestreamButton.Text = "Start Livestream"
+
 			ApplicationNetworkClient:Send({{
 				"StopLivestream"
 			}})
-
-			LivestreamButton.Text = "Start Livestream"
 		else
 			ApplicationNetworkClient:Send({{
 				"StartLivestream",
 				5001
 			}})
+
+			LivestreamVideoFrame.Video = UserInterface.Video.CreateFromURL("udp://192.168.1.204:5001?timeout=1000000")
+			LivestreamVideoFrame.Playing = true
 
 			LivestreamButton.Text = "Stop Livestream"
 		end
@@ -131,7 +138,7 @@ function love.load(args)
 
 	ApplicationNetworkClient = NetworkClient.Create()
 
-	ApplicationNetworkClient.Events:Listen("LivestreamReady", OnLivestreamReady)
+	ApplicationNetworkClient.Events:Listen("StopLivestream", OnStopLivestream)
 
 	ApplicationNetworkClient:Bind("192.168.1.204", 0)
 

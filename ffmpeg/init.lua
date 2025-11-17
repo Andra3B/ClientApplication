@@ -29,4 +29,6 @@ local ffmpeg = {
 	swscale = FFILoader.CreateLibrary("swscale-9", defines, true)
 }
 
+ffmpeg.avutil.av_log_set_level(ffmpeg.avutil.AV_LOG_VERBOSE)
+
 return ffmpeg
