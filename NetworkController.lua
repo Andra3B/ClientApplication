@@ -133,7 +133,7 @@ function NetworkController.GetFreePort()
 	local portFinder = socket.tcp()
 	portFinder:bind("*", 0, 1)
 
-	local _, freePort = portFinder:getsocketname()
+	local _, freePort = portFinder:getsockname()
 	portFinder:close()
 
 	return freePort
